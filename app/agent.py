@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -35,6 +36,8 @@ try:  # the SDK is optional at import time so tests run without it configured
     import anthropic
 except ImportError:  # pragma: no cover
     anthropic = None  # type: ignore[assignment]
+
+logger = logging.getLogger("uvicorn.error")  # the logger uvicorn already routes to Railway's logs
 
 MAX_TOOL_ROUNDS = 6
 SYSTEM_PATH = ROOT / "app" / "prompts" / "system.md"
@@ -317,5 +320,6 @@ def run_turn(db: Session, *, user: User, conversation: Conversation | None, text
         raise
     except Exception as exc:  # noqa: BLE001 - every failure becomes a run row and a visible message
         db.rollback()
+        logger.exception("model turn failed (run error): %s: %s", type(exc).__name__, exc)
         finish_run("error", f"{type(exc).__name__}: {exc}"[:2000])
         yield {"type": "error", "message": _friendly(exc)}
