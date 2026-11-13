@@ -103,6 +103,29 @@ def test_dropped_connection_leaves_no_half_row(client, db, logged_in, fake):
     assert run.status == "aborted"
 
 
+def test_model_failure_is_logged_with_its_cause(client, db, logged_in, fake, caplog):
+    # A failing model call used to leave only a friendly message and a `runs` row: nothing in
+    # Railway's logs said why. The cause must now reach the log, and the user still sees the friendly text.
+    import logging
+
+    class _Boom:
+        name = "fake"
+
+        def stream(self, **kwargs):
+            raise RuntimeError("boom from the model")
+            yield  # pragma: no cover - makes this a generator like the real client
+
+    from app.main import app
+
+    app.state.model_client = _Boom()
+    with caplog.at_level(logging.ERROR, logger="uvicorn.error"):
+        events = read_sse(client.post("/api/chat", json={"message": "will fail"}))
+    assert events[-1]["type"] == "error" and "went wrong" in events[-1]["message"]
+    assert "RuntimeError" in caplog.text and "boom from the model" in caplog.text
+    run = db.query(Run).filter_by(conversation_id=events[0]["conversation_id"]).one()
+    assert run.status == "error" and "boom from the model" in run.error
+
+
 def test_image_message_carries_a_reference(client, db, logged_in, fake):
     import base64
 
