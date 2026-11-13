@@ -45,8 +45,10 @@ _load_dotenv(ROOT / ".env")
 
 
 def _env(name: str, default: str | None = None) -> str | None:
-    value = os.environ.get(name)
-    return value if value not in (None, "") else default
+    # Stripped: a space or newline pasted around a key made httpx reject the header
+    # ("Illegal header value") and the chat answered "Could not reach the model".
+    value = (os.environ.get(name) or "").strip()
+    return value or default
 
 
 # Prices per million tokens, USD, as of writing (October 2026). Check the
