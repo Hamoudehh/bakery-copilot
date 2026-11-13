@@ -28,6 +28,17 @@ def test_copied_env_example_loads(monkeypatch):
     assert s.anthropic_api_key is None  # the line holds only a comment
 
 
+def test_surrounding_whitespace_is_stripped_from_variables(monkeypatch):
+    # A key pasted with a space on each side reached the API as an illegal header value.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", " test-key-0123 \n")
+    monkeypatch.setenv("APP_PASSWORD", "  team-pass ")
+    s = config.load_settings()
+    assert s.anthropic_api_key == "test-key-0123"
+    assert s.app_password == "team-pass"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
+    assert config.load_settings().anthropic_api_key is None  # only whitespace counts as unset
+
+
 def test_quoted_value_keeps_its_hash(tmp_path, monkeypatch):
     _clean_env(monkeypatch, ["APP_PASSWORD", "TIMEZONE", "MODEL"])
     env = tmp_path / ".env"

@@ -126,6 +126,34 @@ def test_model_failure_is_logged_with_its_cause(client, db, logged_in, fake, cap
     assert run.status == "error" and "boom from the model" in run.error
 
 
+def test_api_keys_never_reach_the_log_or_the_runs_table(client, db, logged_in, fake, caplog):
+    # The SDK quoted the key in its error ("Illegal header value b' <key> '"), and the first
+    # version of the failure log printed it to Railway's logs. The prefix is split so the repo-wide
+    # grep for key prefixes (practice.md) stays empty.
+    import logging
+
+    prefix = "sk-" "ant-"
+    leaked = prefix + "usr-ABCDEFGH12345678-xyz_SECRET"
+
+    class _Leaky:
+        name = "fake"
+
+        def stream(self, **kwargs):
+            raise RuntimeError(f"Illegal header value b' {leaked} '")
+            yield  # pragma: no cover
+
+    from app.main import app
+
+    app.state.model_client = _Leaky()
+    with caplog.at_level(logging.ERROR, logger="uvicorn.error"):
+        events = read_sse(client.post("/api/chat", json={"message": "will leak"}))
+    assert events[-1]["type"] == "error"
+    assert leaked not in caplog.text and "ABCDEFGH12345678" not in caplog.text
+    assert "Illegal header value" in caplog.text and prefix + "***" in caplog.text
+    run = db.query(Run).filter_by(conversation_id=events[0]["conversation_id"]).one()
+    assert leaked not in run.error and prefix + "***" in run.error
+
+
 def test_image_message_carries_a_reference(client, db, logged_in, fake):
     import base64
 
